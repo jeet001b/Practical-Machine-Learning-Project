@@ -1,0 +1,198 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Jeet Bhadouria"
+date: "2025-11-09"
+output: html_document
+---
+
+# Abstract
+
+The goal of this assignment is to predict the behaviour of the enthusiasts using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. Using the tools that we've learnt about mashine learning and various models we need to prepare and find the best model to achive the assignment objective.
+
+### Data Source:
+
+*The training data for this project are available here:*
+
+[Training Data](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+
+*The test data are available here:*
+
+[Testing Data](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+
+**Required Libraries**
+
+```{r, warning=FALSE,  message=FALSE}
+#required libraries for our analysis
+require(rpart)
+require(gbm)
+require(rattle)
+require(randomForest)
+require(caret)
+require(here)
+```
+
+### Loading Data
+
+```{r message=FALSE, warning=FALSE, results='hide',eval=FALSE}
+pml_training<- read.csv("pml-training.csv")
+pml_testing<- read.csv("pml_testing.csv")
+```
+
+*Diving into data*
+
+```{r, warning=FALSE}
+#dimensions of our data 
+dim(pml_training)
+```
+
+```{r message=FALSE, warning=FALSE,results='hide'}
+#structure of data
+str(pml_training)
+```
+
+```{r, results='hide'}
+#variables of the data
+names(pml_training)
+```
+
+### Polishing Data
+
+Our first step is to remove the columns that are unnecessary to our models and we can catch them by just little exploration that we did...
+
+```{r}
+data<- pml_training[,-(1:5)]
+```
+
+Now filtering out the variables that have negligible effect in improving our models.
+
+```{r message=FALSE, warning=FALSE}
+#zero variance columns
+ext_col<-nearZeroVar(data)
+data<- data[,-ext_col]
+#removing columns which have more than the avg NA of 70% 
+rem_na<- sapply(data, function(x) mean(is.na(x))>0.7)
+clean_data<- data[,rem_na == FALSE]
+```
+
+*Data Slicing*
+
+To find the best model we need to take a piece of our training data for validation.
+
+```{r, warning=FALSE, results='hide'}
+slice<- createDataPartition(clean_data$classe, p = 0.7, list = FALSE)
+training<- clean_data[slice,]
+val_data<- clean_data[-slice,]
+# setting parameter
+set.seed(122)
+control<- trainControl(method = "cv", number = 5)
+```
+
+# Model Testing
+
+### 1. Gradient Boosting
+
+```{r message=FALSE, warning=FALSE, results='hide'}
+#gradient boosting  modelling(gbm)
+set.seed(123)
+gbm_model<- train(form = classe ~ .,
+                  data = training,
+                  method = "gbm",
+                  trControl = control)
+```
+
+-   *Visual Insights*
+
+```{r echo=FALSE}
+#plot
+ggplot(gbm_model)
+```
+
+-   *Model Validation*
+
+```{r, warning=FALSE}
+#validation
+pre_gbm<- predict(gbm_model, val_data)
+confusionMatrix(table(pre_gbm, val_data$classe))
+```
+
+**Insights:**
+
+Accuracy : 0.9854, 98% accuracy is quite impressive but we cannot say it is the best as we have to test more model type and need to see which fits best.
+
+### 2. Decision Tree
+
+```{r message=FALSE, warning=FALSE}
+#decision tree
+set.seed(124)
+dec_model<- rpart(formula = classe ~ .,
+                  data = training,
+                  method = "class")
+```
+
+*Tuning the plot for a insightful fit.*
+
+```{r message=FALSE, warning=FALSE, results='hide'}
+#plot tuning
+printcp(dec_model)
+pruned_mod<- prune(dec_model, cp = 0.065)
+```
+
+-   *Visual Insights*
+
+```{r message=FALSE, warning=FALSE,echo=FALSE}
+#plot
+fancyRpartPlot(pruned_mod)
+```
+
+-   *Model Validation*
+
+```{r}
+# testing 
+pre_dec<- predict(dec_model, val_data, type = "class")
+dec_valmat<- confusionMatrix(table(pre_dec, val_data$classe))
+```
+
+**Insights:**
+
+Accuracy : 0.7487, 74% accuracy is just average as we can observe it got worse from the previous model we've tested
+
+### 3. Random Forest
+
+```{r message=FALSE, warning=FALSE, results='hide'}
+set.seed(125)
+rf_model <- train(
+  classe ~ .,
+  data = training,
+  method = "rf",
+  trControl = control)
+```
+
+-   *Visual Insights*
+
+```{r}
+#plot
+plot(varImp(rf_model))
+```
+
+-   *Model Validation*
+
+```{r message=FALSE, warning=FALSE}
+#validation
+pre_rf<- predict(rf_model, val_data)
+confusionMatrix(table(pre_rf, val_data$classe))
+```
+
+**Insights:**
+
+Accuracy : 0.9971, 99% impressive, we got our best model which have the best accuracy among all above so this is the model we're going to fit for our test data.
+
+# The Best Fit
+
+*Now let's fit our model with best accuracy to the test dataset*
+
+```{r}
+pre_test<- predict(rf_model, pml_testing)#fitting random forest model
+pre_test
+```
+
+And here our assignment come to an end as we found the best model that can predict test data with almost 99% accuracy.
